@@ -1,0 +1,18 @@
+{
+  "apiGatewayUrl": {
+    "type": "String",
+    "value": "https://apim-shared-pdcibwky2f5ms.azure-api.net/webapp-chat"
+  },
+  "backendName": {
+    "type": "String",
+    "value": "webapp-chat-backend"
+  },
+  "productName": {
+    "type": "String",
+    "value": "webapp-chat-product"
+  },
+  "subscriptionName": {
+    "type": "String",
+    "value": "webapp-chat-subscription"
+  }
+}

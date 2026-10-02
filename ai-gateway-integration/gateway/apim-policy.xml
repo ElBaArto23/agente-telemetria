@@ -1,0 +1,76 @@
+<!--
+  Politica de APIM (seccion inbound) para el AI Gateway.
+  Importar/pegar en: APIM > APIs > (tu API de chat/completions) > Design > Inbound processing > Code editor.
+
+  Nota: si tu APIM es el "Shared APIM Gateway" compartido entre varios labs,
+  usa mejor lab-webapp-chat/main.bicep (misma politica, pero desplegada por
+  IaC junto con la API/backend/product/subscription propios de este lab, sin
+  tocar nada manualmente en el portal). Este XML suelto queda como referencia
+  o para pegarlo a mano si prefieres configurarlo tu mismo.
+
+  Que hace:
+  1. Lee el header x-user-id que envia el backend (server.js) por cada request.
+  2. Lee el campo "model" del body de la request (el mismo que server.js manda
+     al Gateway) para saber que modelo se uso: se necesita para poder sacar
+     el costo en USD despues, en el backend (lib/pricing.js).
+  3. Aplica un limite de tokens por minuto (TPM) por usuario, para evitar abusos.
+  4. Emite metricas de consumo de tokens a Application Insights, con dimensiones
+     (Client IP, API ID, User ID, Model) para poder filtrar/agrupar despues en KQL.
+
+  Ajusta "tokens-per-minute" segun tus necesidades reales de negocio.
+-->
+<policies>
+    <inbound>
+        <base />
+
+        <!-- 1. Recuperamos el ID del usuario de la cabecera personalizada enviada por el backend -->
+        <set-variable name="userId" value='@(context.Request.Headers.GetValueOrDefault("x-user-id", "UsuarioAnonimo"))' />
+
+        <!-- 1b. Leemos el modelo directamente del body (mismo campo "model" que ya manda
+             server.js): asi funciona tambien si algun dia alguien llama al Gateway sin
+             pasar por nuestro backend. Si no se puede leer, queda "desconocido" en vez de
+             tumbar la request. -->
+        <set-variable name="modelName" value='@{
+            try {
+                var body = context.Request.Body?.As&lt;JObject&gt;(preserveContent: true);
+                var model = body != null ? (string)body["model"] : null;
+                return string.IsNullOrEmpty(model) ? "desconocido" : model;
+            } catch {
+                return "desconocido";
+            }
+        }' />
+
+        <set-query-parameter name="api-version" exists-action="skip">
+            <value>2024-10-21</value>
+        </set-query-parameter>
+        <authentication-managed-identity resource="https://cognitiveservices.azure.com" output-token-variable-name="msi-access-token" ignore-error="false" />
+        <set-header name="Authorization" exists-action="override">
+            <value>@("Bearer " + (string)context.Variables["msi-access-token"])</value>
+        </set-header>
+        <set-header name="api-key" exists-action="delete" />
+
+        <!-- 2. Aplicamos un limite de tokens (TPM) por identificador de usuario para evitar abusos -->
+        <llm-token-limit counter-key='@(context.Variables.GetValueOrDefault&lt;string&gt;("userId"))'
+                         tokens-per-minute="1000"
+                         estimate-prompt-tokens="false"
+                         remaining-tokens-variable-name="tokensRestantes" />
+
+        <!-- 3. Emitimos la telemetria del consumo de tokens y latencias a Application Insights con dimensiones -->
+        <llm-emit-token-metric namespace="IA-Consumo-Usuarios">
+            <dimension name="Client IP" value="@(context.Request.IpAddress)" />
+            <dimension name="API ID" value="@(context.Api.Id)" />
+            <dimension name="User ID" value='@(context.Variables.GetValueOrDefault&lt;string&gt;("userId"))' />
+            <dimension name="Model" value='@(context.Variables.GetValueOrDefault&lt;string&gt;("modelName"))' />
+        </llm-emit-token-metric>
+    </inbound>
+    <backend>
+        <!-- Enrutamiento y reenvio automatico al modelo backend (Azure OpenAI/Foundry) -->
+        <forward-request />
+    </backend>
+    <outbound>
+        <base />
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
+</policies>

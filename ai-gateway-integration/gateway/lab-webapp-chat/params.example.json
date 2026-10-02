@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "apimServiceName": {
+      "value": "REEMPLAZAR-con-output-apimServiceName-del-lab-base"
+    },
+    "labPrefix": {
+      "value": "webapp-chat"
+    },
+    "openAiEndpoint": {
+      "value": "https://REEMPLAZAR-tu-recurso.openai.azure.com"
+    },
+    "modelDeploymentName": {
+      "value": "gpt-5.4-mini"
+    },
+    "tokensPerMinute": {
+      "value": 1000
+    }
+  }
+}

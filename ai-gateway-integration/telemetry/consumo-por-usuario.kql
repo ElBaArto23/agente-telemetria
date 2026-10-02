@@ -1,0 +1,30 @@
+// Consulta Kusto (KQL) para Application Insights (Logs).
+// Muestra el consumo total de tokens por usuario en las ultimas 24 horas,
+// usando las dimensiones emitidas por la politica llm-emit-token-metric en APIM.
+//
+// Uso: App Insights (o Log Analytics del workspace vinculado) > Logs > pegar y ejecutar.
+// Ajusta "ago(24h)" segun el rango de tiempo que necesites.
+//
+// NOTA (corregido): los nombres de metrica de abajo ("Total Tokens",
+// "Prompt Tokens", "Completion Tokens") son los que realmente emite
+// <llm-emit-token-metric> por defecto -- confirmado contra lib/appInsightsClient.js
+// y server.js, que son el codigo que SI esta leyendo datos reales. Los nombres
+// viejos ("llm-metrics" / "Token Consumption") no existen en customMetrics para
+// este Gateway; con ellos esta consulta siempre devolvia vacio aunque la
+// telemetria si estuviera llegando.
+
+customMetrics
+| where timestamp > ago(24h)
+| where name in ("Total Tokens", "Prompt Tokens", "Completion Tokens")
+| extend UserID = tostring(customDimensions["User ID"])
+| extend APIID = tostring(customDimensions["API ID"])
+| summarize ConsumoTotal = sumif(valueSum, name == "Total Tokens"), Prompts = sumif(valueSum, name == "Prompt Tokens"), Respuestas = sumif(valueSum, name == "Completion Tokens"), Llamadas = sumif(valueCount, name == "Total Tokens") by UserID, APIID
+| order by ConsumoTotal desc
+
+// Variante: serie temporal por usuario (para graficos de tendencia en el panel web)
+// customMetrics
+// | where timestamp > ago(7d)
+// | where name == "Total Tokens"
+// | extend UserID = tostring(customDimensions["User ID"])
+// | summarize ConsumoTotal = sum(valueSum) by UserID, bin(timestamp, 1h)
+// | order by timestamp asc
